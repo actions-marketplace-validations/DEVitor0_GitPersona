@@ -1,0 +1,32 @@
+{
+  "name": "gitpersona",
+  "version": "1.0.0",
+  "description": "Ferramenta que analisa o comportamento público de desenvolvedores no GitHub e gera personas visuais",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "analyze": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "github",
+    "persona",
+    "developer",
+    "profile",
+    "analytics"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^20.0.2",
+    "axios": "^1.6.2",
+    "canvas": "^2.11.2",
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
