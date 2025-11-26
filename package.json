@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "package": "ncc build src/action.ts -o dist/action",
     "start": "node dist/index.js server",
     "dev": "ts-node src/server.ts",
     "analyze": "ts-node src/index.ts analyze",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.4",
+    "@vercel/ncc": "^0.38.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
