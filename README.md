@@ -66,7 +66,7 @@ jobs:
       - name: Generate Persona Card
         uses: devitor0/GitPersona@main
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.PAT_TOKEN }} # Recomendado: Criar um PAT para ler repos privados
           username: ${{ github.repository_owner }}
           output_dir: dist
           
@@ -74,10 +74,21 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add dist/persona.svg
+          git add -f dist/persona.svg
           git commit -m "chore: update persona card" || exit 0
           git push
 ```
+
+### ⚠️ Importante: Para obter dados precisos (Repos Privados)
+O token padrão do GitHub (`GITHUB_TOKEN`) tem acesso limitado e **não consegue ler seus repositórios privados**, o que pode gerar uma persona "incoerente" (ex: Iniciante em vez de Senior).
+
+Para corrigir isso:
+1.  Vá em **Settings** (do seu perfil) -> **Developer Settings** -> **Personal Access Tokens** -> **Tokens (classic)**.
+2.  Gere um novo token (Generate new token) com o escopo **`repo`** e **`read:user`**.
+3.  Copie o token.
+4.  Vá no seu repositório -> **Settings** -> **Secrets and variables** -> **Actions**.
+5.  Crie um **New repository secret** com o nome `PAT_TOKEN` e cole o token.
+6.  Atualize seu workflow para usar `${{ secrets.PAT_TOKEN }}` em vez de `${{ secrets.GITHUB_TOKEN }}`.
 
 ### Passo 2: Gerar o Primeiro Card
 1.  Vá até a aba **Actions** do seu repositório.

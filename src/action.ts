@@ -28,10 +28,23 @@ async function run() {
     }
 
     console.log(`iniciando gitpersona action para ${username}`);
+    
+    // Debug: Mostrar se o token está presente (sem mostrar o valor)
+    console.log(`DEBUG: Token presente? ${!!process.env.GITHUB_TOKEN}`);
+    if (process.env.GITHUB_TOKEN) {
+      console.log(`DEBUG: Token length: ${process.env.GITHUB_TOKEN.length}`);
+    }
 
     // 2. Executar Análise
     const analisador = new AnalisadorPersona();
     const resultado = await analisador.analisar(username);
+
+    // Debug: Mostrar métricas encontradas
+    console.log('DEBUG: Métricas encontradas:');
+    console.log(`- Repositórios: ${resultado.estatisticas.totalRepositorios}`);
+    console.log(`- Linguagens: ${resultado.estatisticas.linguagensUsadas.length}`);
+    console.log(`- Commits (estimado): ${resultado.estatisticas.totalCommits}`);
+    console.log(`- Streaks: ${resultado.estatisticas.sequenciaAtual} dias`);
 
     console.log(`persona identificada: ${resultado.persona.titulo}`);
 
