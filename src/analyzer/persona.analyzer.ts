@@ -57,6 +57,7 @@ export class AnalisadorPersona {
     let temGitHubActions = false;
     let temDockerfiles = false;
     let temScriptsAutomacao = false;
+    let tipoScriptAutomacao: 'Bash' | 'PowerShell' | null = null;
     let temTerraform = false;
     let temAnsible = false;
     let reposComActions = 0;
@@ -67,13 +68,13 @@ export class AnalisadorPersona {
     
     // Fazer verificações em paralelo para acelerar
     const verificacoes = reposParaVerificar.map(async (repo) => {
-      const [hasActions, hasDocker, hasScripts] = await Promise.all([
+      const [hasActions, hasDocker, scriptsResult] = await Promise.all([
         this.servicoGitHub.temGitHubActions(dados.nomeUsuario, repo.name),
         this.servicoGitHub.temDockerfile(dados.nomeUsuario, repo.name),
         this.servicoGitHub.temScriptsAutomacao(dados.nomeUsuario, repo.name)
       ]);
       
-      return { hasActions, hasDocker, hasScripts };
+      return { hasActions, hasDocker, scriptsResult };
     });
     
     const resultados = await Promise.all(verificacoes);
@@ -86,8 +87,12 @@ export class AnalisadorPersona {
       if (resultado.hasDocker && !temDockerfiles) {
         temDockerfiles = true;
       }
-      if (resultado.hasScripts && !temScriptsAutomacao) {
+      if (resultado.scriptsResult.temScripts) {
         temScriptsAutomacao = true;
+        // Atualizar tipo de script se ainda não foi definido ou se o novo tipo tem prioridade
+        if (!tipoScriptAutomacao) {
+          tipoScriptAutomacao = resultado.scriptsResult.tipoScript;
+        }
       }
     });
     
@@ -184,6 +189,7 @@ export class AnalisadorPersona {
       temDockerfiles,
       reposComActions,
       temScriptsAutomacao,
+      tipoScriptAutomacao,
       temTerraform,
       temAnsible,
       pontuacaoDiversidade,
@@ -250,6 +256,17 @@ export class AnalisadorPersona {
     const eventosPush = dados.eventos.filter(e => e.type === 'PushEvent').length;
     if (eventosPush > 30) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 20;
     
+    // SEQUÊNCIAS: Indicador FORTE de dedicação e disciplina
+    // Sequências longas são o verdadeiro diferencial do Programador Vigoroso
+    if (stats.sequenciaAtual > 30) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+    if (stats.sequenciaAtual > 60) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+    if (stats.sequenciaAtual > 100) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 50;
+    if (stats.sequenciaAtual > 200) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 60;
+    if (stats.sequenciaAtual > 365) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 80; // 1 ano completo!
+    
+    if (stats.maiorSequencia > 100) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 30;
+    if (stats.maiorSequencia > 200) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+    
     // Docker indica maturidade profissional para desenvolvedores vigorosos
     if (stats.temDockerfiles && stats.totalCommits > 500) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 10;
 
@@ -278,25 +295,27 @@ export class AnalisadorPersona {
 
     // Automatizador: foco em CI/CD, containerização e scripts de automação
     // Prioriza múltiplos projetos automatizados
-    // REBALANCEAMENTO: Critérios mais rigorosos para evitar falsos positivos
+    // REBALANCEAMENTO: Critérios MUITO mais rigorosos para evitar falsos positivos
     
-    // Pontuação base por Actions (reduzida)
-    if (stats.reposComActions >= 1) pontuacoes[TipoPersona.DEVOPS] += 15;
-    if (stats.reposComActions >= 3) pontuacoes[TipoPersona.DEVOPS] += 25;
-    if (stats.reposComActions >= 5) pontuacoes[TipoPersona.DEVOPS] += 20;
+    // Pontuação base por Actions - MUITO reduzida se não tiver volume
+    if (stats.reposComActions >= 1) pontuacoes[TipoPersona.DEVOPS] += 10;
+    if (stats.reposComActions >= 3) pontuacoes[TipoPersona.DEVOPS] += 20;
+    if (stats.reposComActions >= 5) pontuacoes[TipoPersona.DEVOPS] += 30;
     
-    // Docker é forte, mas sozinho não define DevOps completo
-    if (stats.temDockerfiles) pontuacoes[TipoPersona.DEVOPS] += 25;
+    // Docker sozinho não vale muito se não tiver múltiplos projetos
+    if (stats.temDockerfiles && stats.reposComActions >= 1) pontuacoes[TipoPersona.DEVOPS] += 20;
+    if (stats.temDockerfiles && stats.reposComActions === 0) pontuacoes[TipoPersona.DEVOPS] += 5; // muito pouco
     
-    // Scripts são comuns, peso drasticamente reduzido
-    if (stats.temScriptsAutomacao) pontuacoes[TipoPersona.DEVOPS] += 10;
+    // Scripts são comuns, peso baixo
+    if (stats.temScriptsAutomacao) pontuacoes[TipoPersona.DEVOPS] += 5;
     
     // Stack DevOps (Shell, Python, etc.) - peso reduzido
     if (stacksUnicas.has('devops')) pontuacoes[TipoPersona.DEVOPS] += 10;
 
     // BÔNUS DE SINERGIA (Onde o verdadeiro DevOps brilha)
-    // Actions + Docker = Pipeline completa
-    if (stats.temGitHubActions && stats.temDockerfiles) pontuacoes[TipoPersona.DEVOPS] += 30;
+    // Actions + Docker = Pipeline completa, mas só se tiver VOLUME
+    if (stats.temGitHubActions && stats.temDockerfiles && stats.reposComActions >= 3) pontuacoes[TipoPersona.DEVOPS] += 40;
+    if (stats.temGitHubActions && stats.temDockerfiles && stats.reposComActions < 3) pontuacoes[TipoPersona.DEVOPS] += 15;
 
     // IaC (Terraform/Ansible) é o "santo graal" do DevOps - peso alto
     if (stats.temTerraform || stats.temAnsible) pontuacoes[TipoPersona.DEVOPS] += 40;
@@ -305,9 +324,21 @@ export class AnalisadorPersona {
     // Não precisa de pontos altos, será escolhido automaticamente se os outros forem baixos
     pontuacoes[TipoPersona.ESTUDANTE] = 10; // pontuação base baixa
 
-    return Object.keys(pontuacoes).reduce((a, b) => 
+    // LOG para debug: mostrar pontuação de cada persona
+    console.log('\nPONTUACAO DAS PERSONAS:');
+    console.log(`  Explorador: ${pontuacoes[TipoPersona.EXPLORADOR]}`);
+    console.log(`  Programador Vigoroso: ${pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO]}`);
+    console.log(`  Bug Hunter: ${pontuacoes[TipoPersona.BUG_HUNTER]}`);
+    console.log(`  Automatizador (DevOps): ${pontuacoes[TipoPersona.DEVOPS]}`);
+    console.log(`  Estudante: ${pontuacoes[TipoPersona.ESTUDANTE]}`);
+    
+    const personaEscolhida = Object.keys(pontuacoes).reduce((a, b) => 
       pontuacoes[a as TipoPersona] > pontuacoes[b as TipoPersona] ? a : b
     ) as TipoPersona;
+    
+    console.log(`\nESCOLHIDO: ${personaEscolhida} (${pontuacoes[personaEscolhida]} pontos)\n`);
+
+    return personaEscolhida;
   }
 
   private calcularConfianca(

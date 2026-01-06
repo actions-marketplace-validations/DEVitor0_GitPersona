@@ -30,7 +30,8 @@ export class ServicoGitHub {
           }
         }
       );
-      const repositorios: RepositorioGitHub[] = respostaRepos.data;
+      // Filtrar repositórios que são forks - não foram desenvolvidos pelo autor
+      const repositorios: RepositorioGitHub[] = respostaRepos.data.filter((repo: any) => !repo.fork);
 
       const respostaEventos = await axios.get(
         `${this.urlBase}/users/${nomeUsuario}/events/public`,
@@ -209,32 +210,76 @@ export class ServicoGitHub {
     }
   }
 
-  async temScriptsAutomacao(nomeUsuario: string, nomeRepo: string): Promise<boolean> {
+  async temScriptsAutomacao(nomeUsuario: string, nomeRepo: string): Promise<{ temScripts: boolean; tipoScript: 'Bash' | 'PowerShell' | null }> {
     try {
-      // Verificar diretórios comuns de scripts de automação
-      const verificacoes = [
-        `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/scripts`,
-        `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/.scripts`,
-        `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/automation`
-      ];
+      let countBash = 0;
+      let countPowerShell = 0;
 
-      for (const url of verificacoes) {
-        try {
-          const resposta = await axios.get(url, { headers: this.headers });
-          // Verificar se há arquivos de script (.sh, .py, .js)
-          if (Array.isArray(resposta.data) && resposta.data.length > 0) {
-            const hasScripts = resposta.data.some((file: any) => 
-              /\.(sh|py|js|bash)$/i.test(file.name)
-            );
-            if (hasScripts) return true;
+      // Usar a API de busca do GitHub para encontrar arquivos recursivamente
+      // Buscar arquivos .sh
+      try {
+        const respostaBash = await axios.get(
+          `${this.urlBase}/search/code`,
+          {
+            headers: {
+              ...this.headers,
+              'Accept': 'application/vnd.github.v3+json'
+            },
+            params: {
+              q: `extension:sh repo:${nomeUsuario}/${nomeRepo}`,
+              per_page: 1
+            }
           }
-        } catch {
-          continue;
+        );
+        countBash = respostaBash.data.total_count || 0;
+      } catch (erro: any) {
+        // Ignorar erro 403 (repo vazio) e continuar
+        if (erro.response?.status !== 403) {
+          console.log(`Erro ao buscar .sh em ${nomeRepo}:`, erro.response?.status);
         }
       }
-      return false;
-    } catch {
-      return false;
+
+      // Buscar arquivos .ps1
+      try {
+        const respostaPowerShell = await axios.get(
+          `${this.urlBase}/search/code`,
+          {
+            headers: {
+              ...this.headers,
+              'Accept': 'application/vnd.github.v3+json'
+            },
+            params: {
+              q: `extension:ps1 repo:${nomeUsuario}/${nomeRepo}`,
+              per_page: 1
+            }
+          }
+        );
+        countPowerShell = respostaPowerShell.data.total_count || 0;
+      } catch (erro: any) {
+        // Ignorar erro 403 (repo vazio) e continuar
+        if (erro.response?.status !== 403) {
+          console.log(`Erro ao buscar .ps1 em ${nomeRepo}:`, erro.response?.status);
+        }
+      }
+
+      const temScripts = countBash > 0 || countPowerShell > 0;
+      let tipoScript: 'Bash' | 'PowerShell' | null = null;
+
+      if (temScripts) {
+        if (countBash > 0 && countPowerShell > 0) {
+          // Se usou ambos, retorna o mais usado
+          tipoScript = countBash >= countPowerShell ? 'Bash' : 'PowerShell';
+        } else if (countBash > 0) {
+          tipoScript = 'Bash';
+        } else {
+          tipoScript = 'PowerShell';
+        }
+      }
+
+      return { temScripts, tipoScript };
+    } catch (erro) {
+      console.error('Erro geral em temScriptsAutomacao:', erro);
+      return { temScripts: false, tipoScript: null };
     }
   }
 
@@ -394,31 +439,31 @@ export class ServicoGitHub {
           
           if (diffDays === 1) {
             sequenciaCorrenteTemp++;
-          } else {
             if (sequenciaCorrenteTemp > maiorSequencia) {
               maiorSequencia = sequenciaCorrenteTemp;
             }
+          } else {
             sequenciaCorrenteTemp = 1;
           }
         }
         
-        if (sequenciaCorrenteTemp > maiorSequencia) {
-          maiorSequencia = sequenciaCorrenteTemp;
-        }
-        
-        // Verificar sequencia atual
+        // Verificar se a sequência atual está ativa
+        // A sequência é considerada ativa se a última contribuição foi hoje ou ontem
         const ultimaDataStr = dias[dias.length - 1];
         const hoje = new Date();
+        hoje.setHours(12, 0, 0, 0);
         const hojeStr = hoje.toISOString().split('T')[0];
         
         const ontem = new Date(hoje);
         ontem.setDate(ontem.getDate() - 1);
         const ontemStr = ontem.toISOString().split('T')[0];
         
+        // Se a última contribuição foi hoje ou ontem, a sequência está ativa
         if (ultimaDataStr === hojeStr || ultimaDataStr === ontemStr) {
-             sequenciaAtual = sequenciaCorrenteTemp;
+          sequenciaAtual = sequenciaCorrenteTemp;
         } else {
-             sequenciaAtual = 0;
+          // Sequência quebrada
+          sequenciaAtual = 0;
         }
       }
 
