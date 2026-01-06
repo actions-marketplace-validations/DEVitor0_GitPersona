@@ -149,7 +149,9 @@ export class GeradorCard {
 
       case TipoPersona.DEVOPS:
         const containerizacao = stats.temDockerfiles ? 'Docker' : 'Não';
-        const automacao = stats.temScriptsAutomacao ? 'Sim' : 'Não';
+        const automacao = stats.temScriptsAutomacao 
+          ? (stats.tipoScriptAutomacao || 'Sim')
+          : 'Não';
         return [
           { icone: ICONES.ROCKET, valor: stats.reposComActions.toString(), label: 'Projetos com CI/CD' },
           { icone: ICONES.CONTAINER, valor: containerizacao, label: 'Containerização' },
