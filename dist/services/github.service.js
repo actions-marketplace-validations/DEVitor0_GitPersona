@@ -115,11 +115,37 @@ class ServicoGitHub {
     }
     async temDockerfile(nomeUsuario, nomeRepo) {
         try {
+            // Verificar Dockerfile (case sensitive)
             await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/Dockerfile`, { headers: this.headers });
             return true;
         }
         catch {
-            return false;
+            // Se não encontrou Dockerfile, tentar docker-compose.yml
+            try {
+                await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yml`, { headers: this.headers });
+                return true;
+            }
+            catch {
+                // Tentar docker-compose.yaml
+                try {
+                    await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yaml`, { headers: this.headers });
+                    return true;
+                }
+                catch {
+                    // Última tentativa: verificar se tem a extensão .dockerfile
+                    try {
+                        const resposta = await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/`, { headers: this.headers });
+                        if (Array.isArray(resposta.data)) {
+                            return resposta.data.some((arquivo) => arquivo.name.toLowerCase().includes('dockerfile') ||
+                                arquivo.name.toLowerCase().includes('docker-compose'));
+                        }
+                        return false;
+                    }
+                    catch {
+                        return false;
+                    }
+                }
+            }
         }
     }
     async temTerraform(nomeUsuario, nomeRepo) {

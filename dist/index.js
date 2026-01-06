@@ -32,7 +32,7 @@ programa
         console.log(`   - commits recentes: ${resultado.estatisticas.frequenciaCommits}`);
         console.log(`\ngerando card svg`);
         const geradorCard = new card_generator_1.GeradorCard();
-        const svg = geradorCard.gerarSVG(resultado);
+        const svg = await geradorCard.gerarSVG(resultado);
         const caminhoSaida = geradorCard.salvarSVG(svg, nomeUsuario);
         console.log(`card salvo em ${caminhoSaida}`);
         console.log(`\nuse no seu readme:`);

@@ -235,6 +235,9 @@ export class AnalisadorPersona {
     // Só ganha pontos de repositório se tiver stars para validar que não é spam
     if (stats.totalRepositorios > 20 && stats.totalStars > 50) pontuacoes[TipoPersona.EXPLORADOR] += 20;
     if (stats.totalRepositorios > 50 && stats.totalStars > 100) pontuacoes[TipoPersona.EXPLORADOR] += 20;
+    
+    // Docker indica versatilidade técnica para Exploradores
+    if (stats.temDockerfiles && stacksUnicas.size >= 3) pontuacoes[TipoPersona.EXPLORADOR] += 15;
 
     // Programador Vigoroso: commits frequentes, atividade constante
     // Se tiver muitos commits totais, ganha muitos pontos
@@ -246,6 +249,9 @@ export class AnalisadorPersona {
     
     const eventosPush = dados.eventos.filter(e => e.type === 'PushEvent').length;
     if (eventosPush > 30) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 20;
+    
+    // Docker indica maturidade profissional para desenvolvedores vigorosos
+    if (stats.temDockerfiles && stats.totalCommits > 500) pontuacoes[TipoPersona.PROGRAMADOR_VIGOROSO] += 10;
 
     // Bug Hunter: foco em issues criadas e correções
     // Usando totalIssuesCriadas ao invés de issuesAbertas (que era do repo)
