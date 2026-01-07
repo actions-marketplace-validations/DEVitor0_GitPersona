@@ -31,7 +31,7 @@ app.get('/:nomeUsuario', async (req, res) => {
         }
         console.log(`analisando ${nomeUsuario}`);
         const resultado = await analisador.analisar(nomeUsuario);
-        const svg = geradorCard.gerarSVG(resultado);
+        const svg = await geradorCard.gerarSVG(resultado);
         cache.set(chaveCache, { svg, timestamp: Date.now() });
         res.setHeader('Content-Type', 'image/svg+xml');
         res.setHeader('Cache-Control', 'public, max-age=3600');

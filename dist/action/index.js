@@ -4297,6 +4297,7 @@ class AnalisadorPersona {
         let temGitHubActions = false;
         let temDockerfiles = false;
         let temScriptsAutomacao = false;
+        let tipoScriptAutomacao = null;
         let temTerraform = false;
         let temAnsible = false;
         let reposComActions = 0;
@@ -4305,12 +4306,12 @@ class AnalisadorPersona {
         const reposParaVerificar = dados.repositorios.slice(0, Math.min(10, dados.repositorios.length));
         // Fazer verificações em paralelo para acelerar
         const verificacoes = reposParaVerificar.map(async (repo) => {
-            const [hasActions, hasDocker, hasScripts] = await Promise.all([
+            const [hasActions, hasDocker, scriptsResult] = await Promise.all([
                 this.servicoGitHub.temGitHubActions(dados.nomeUsuario, repo.name),
                 this.servicoGitHub.temDockerfile(dados.nomeUsuario, repo.name),
                 this.servicoGitHub.temScriptsAutomacao(dados.nomeUsuario, repo.name)
             ]);
-            return { hasActions, hasDocker, hasScripts };
+            return { hasActions, hasDocker, scriptsResult };
         });
         const resultados = await Promise.all(verificacoes);
         resultados.forEach(resultado => {
@@ -4321,8 +4322,12 @@ class AnalisadorPersona {
             if (resultado.hasDocker && !temDockerfiles) {
                 temDockerfiles = true;
             }
-            if (resultado.hasScripts && !temScriptsAutomacao) {
+            if (resultado.scriptsResult.temScripts) {
                 temScriptsAutomacao = true;
+                // Atualizar tipo de script se ainda não foi definido ou se o novo tipo tem prioridade
+                if (!tipoScriptAutomacao) {
+                    tipoScriptAutomacao = resultado.scriptsResult.tipoScript;
+                }
             }
         });
         // Verificar IaC apenas se já tem indícios de DevOps (otimização)
@@ -4409,6 +4414,7 @@ class AnalisadorPersona {
             temDockerfiles,
             reposComActions,
             temScriptsAutomacao,
+            tipoScriptAutomacao,
             temTerraform,
             temAnsible,
             pontuacaoDiversidade,
@@ -4457,6 +4463,9 @@ class AnalisadorPersona {
             pontuacoes[types_1.TipoPersona.EXPLORADOR] += 20;
         if (stats.totalRepositorios > 50 && stats.totalStars > 100)
             pontuacoes[types_1.TipoPersona.EXPLORADOR] += 20;
+        // Docker indica versatilidade técnica para Exploradores
+        if (stats.temDockerfiles && stacksUnicas.size >= 3)
+            pontuacoes[types_1.TipoPersona.EXPLORADOR] += 15;
         // Programador Vigoroso: commits frequentes, atividade constante
         // Se tiver muitos commits totais, ganha muitos pontos
         if (stats.totalCommits > 1000)
@@ -4470,6 +4479,25 @@ class AnalisadorPersona {
         const eventosPush = dados.eventos.filter(e => e.type === 'PushEvent').length;
         if (eventosPush > 30)
             pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 20;
+        // SEQUÊNCIAS: Indicador FORTE de dedicação e disciplina
+        // Sequências longas são o verdadeiro diferencial do Programador Vigoroso
+        if (stats.sequenciaAtual > 30)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+        if (stats.sequenciaAtual > 60)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+        if (stats.sequenciaAtual > 100)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 50;
+        if (stats.sequenciaAtual > 200)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 60;
+        if (stats.sequenciaAtual > 365)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 80; // 1 ano completo!
+        if (stats.maiorSequencia > 100)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 30;
+        if (stats.maiorSequencia > 200)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 40;
+        // Docker indica maturidade profissional para desenvolvedores vigorosos
+        if (stats.temDockerfiles && stats.totalCommits > 500)
+            pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO] += 10;
         // Bug Hunter: foco em issues criadas e correções
         // Usando totalIssuesCriadas ao invés de issuesAbertas (que era do repo)
         // RATIO: Issues / Commits. Se for muito baixo, provavelmente é dev, não bug hunter
@@ -4496,34 +4524,47 @@ class AnalisadorPersona {
             pontuacoes[types_1.TipoPersona.BUG_HUNTER] += 25;
         // Automatizador: foco em CI/CD, containerização e scripts de automação
         // Prioriza múltiplos projetos automatizados
-        // REBALANCEAMENTO: Critérios mais rigorosos para evitar falsos positivos
-        // Pontuação base por Actions (reduzida)
+        // REBALANCEAMENTO: Critérios MUITO mais rigorosos para evitar falsos positivos
+        // Pontuação base por Actions - MUITO reduzida se não tiver volume
         if (stats.reposComActions >= 1)
-            pontuacoes[types_1.TipoPersona.DEVOPS] += 15;
-        if (stats.reposComActions >= 3)
-            pontuacoes[types_1.TipoPersona.DEVOPS] += 25;
-        if (stats.reposComActions >= 5)
-            pontuacoes[types_1.TipoPersona.DEVOPS] += 20;
-        // Docker é forte, mas sozinho não define DevOps completo
-        if (stats.temDockerfiles)
-            pontuacoes[types_1.TipoPersona.DEVOPS] += 25;
-        // Scripts são comuns, peso drasticamente reduzido
-        if (stats.temScriptsAutomacao)
             pontuacoes[types_1.TipoPersona.DEVOPS] += 10;
+        if (stats.reposComActions >= 3)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 20;
+        if (stats.reposComActions >= 5)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 30;
+        // Docker sozinho não vale muito se não tiver múltiplos projetos
+        if (stats.temDockerfiles && stats.reposComActions >= 1)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 20;
+        if (stats.temDockerfiles && stats.reposComActions === 0)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 5; // muito pouco
+        // Scripts são comuns, peso baixo
+        if (stats.temScriptsAutomacao)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 5;
         // Stack DevOps (Shell, Python, etc.) - peso reduzido
         if (stacksUnicas.has('devops'))
             pontuacoes[types_1.TipoPersona.DEVOPS] += 10;
         // BÔNUS DE SINERGIA (Onde o verdadeiro DevOps brilha)
-        // Actions + Docker = Pipeline completa
-        if (stats.temGitHubActions && stats.temDockerfiles)
-            pontuacoes[types_1.TipoPersona.DEVOPS] += 30;
+        // Actions + Docker = Pipeline completa, mas só se tiver VOLUME
+        if (stats.temGitHubActions && stats.temDockerfiles && stats.reposComActions >= 3)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 40;
+        if (stats.temGitHubActions && stats.temDockerfiles && stats.reposComActions < 3)
+            pontuacoes[types_1.TipoPersona.DEVOPS] += 15;
         // IaC (Terraform/Ansible) é o "santo graal" do DevOps - peso alto
         if (stats.temTerraform || stats.temAnsible)
             pontuacoes[types_1.TipoPersona.DEVOPS] += 40;
         // Estudante é o perfil padrão (fallback) quando nenhum outro se destaca
         // Não precisa de pontos altos, será escolhido automaticamente se os outros forem baixos
         pontuacoes[types_1.TipoPersona.ESTUDANTE] = 10; // pontuação base baixa
-        return Object.keys(pontuacoes).reduce((a, b) => pontuacoes[a] > pontuacoes[b] ? a : b);
+        // LOG para debug: mostrar pontuação de cada persona
+        console.log('\nPONTUACAO DAS PERSONAS:');
+        console.log(`  Explorador: ${pontuacoes[types_1.TipoPersona.EXPLORADOR]}`);
+        console.log(`  Programador Vigoroso: ${pontuacoes[types_1.TipoPersona.PROGRAMADOR_VIGOROSO]}`);
+        console.log(`  Bug Hunter: ${pontuacoes[types_1.TipoPersona.BUG_HUNTER]}`);
+        console.log(`  Automatizador (DevOps): ${pontuacoes[types_1.TipoPersona.DEVOPS]}`);
+        console.log(`  Estudante: ${pontuacoes[types_1.TipoPersona.ESTUDANTE]}`);
+        const personaEscolhida = Object.keys(pontuacoes).reduce((a, b) => pontuacoes[a] > pontuacoes[b] ? a : b);
+        console.log(`\nESCOLHIDO: ${personaEscolhida} (${pontuacoes[personaEscolhida]} pontos)\n`);
+        return personaEscolhida;
     }
     calcularConfianca(tipoPersona, stats, dados) {
         const criteriosAtendidos = [];
@@ -4792,7 +4833,9 @@ class GeradorCard {
                 ];
             case types_1.TipoPersona.DEVOPS:
                 const containerizacao = stats.temDockerfiles ? 'Docker' : 'Não';
-                const automacao = stats.temScriptsAutomacao ? 'Sim' : 'Não';
+                const automacao = stats.temScriptsAutomacao
+                    ? (stats.tipoScriptAutomacao || 'Sim')
+                    : 'Não';
                 return [
                     { icone: ICONES.ROCKET, valor: stats.reposComActions.toString(), label: 'Projetos com CI/CD' },
                     { icone: ICONES.CONTAINER, valor: containerizacao, label: 'Containerização' },
@@ -4877,7 +4920,8 @@ class ServicoGitHub {
                     type: 'owner'
                 }
             });
-            const repositorios = respostaRepos.data;
+            // Filtrar repositórios que são forks - não foram desenvolvidos pelo autor
+            const repositorios = respostaRepos.data.filter((repo) => !repo.fork);
             const respostaEventos = await axios_1.default.get(`${this.urlBase}/users/${nomeUsuario}/events/public`, {
                 headers: this.headers,
                 params: {
@@ -4967,11 +5011,37 @@ class ServicoGitHub {
     }
     async temDockerfile(nomeUsuario, nomeRepo) {
         try {
+            // Verificar Dockerfile (case sensitive)
             await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/Dockerfile`, { headers: this.headers });
             return true;
         }
         catch {
-            return false;
+            // Se não encontrou Dockerfile, tentar docker-compose.yml
+            try {
+                await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yml`, { headers: this.headers });
+                return true;
+            }
+            catch {
+                // Tentar docker-compose.yaml
+                try {
+                    await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yaml`, { headers: this.headers });
+                    return true;
+                }
+                catch {
+                    // Última tentativa: verificar se tem a extensão .dockerfile
+                    try {
+                        const resposta = await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/`, { headers: this.headers });
+                        if (Array.isArray(resposta.data)) {
+                            return resposta.data.some((arquivo) => arquivo.name.toLowerCase().includes('dockerfile') ||
+                                arquivo.name.toLowerCase().includes('docker-compose'));
+                        }
+                        return false;
+                    }
+                    catch {
+                        return false;
+                    }
+                }
+            }
         }
     }
     async temTerraform(nomeUsuario, nomeRepo) {
@@ -4996,30 +5066,68 @@ class ServicoGitHub {
     }
     async temScriptsAutomacao(nomeUsuario, nomeRepo) {
         try {
-            // Verificar diretórios comuns de scripts de automação
-            const verificacoes = [
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/scripts`,
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/.scripts`,
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/automation`
-            ];
-            for (const url of verificacoes) {
-                try {
-                    const resposta = await axios_1.default.get(url, { headers: this.headers });
-                    // Verificar se há arquivos de script (.sh, .py, .js)
-                    if (Array.isArray(resposta.data) && resposta.data.length > 0) {
-                        const hasScripts = resposta.data.some((file) => /\.(sh|py|js|bash)$/i.test(file.name));
-                        if (hasScripts)
-                            return true;
+            let countBash = 0;
+            let countPowerShell = 0;
+            // Usar a API de busca do GitHub para encontrar arquivos recursivamente
+            // Buscar arquivos .sh
+            try {
+                const respostaBash = await axios_1.default.get(`${this.urlBase}/search/code`, {
+                    headers: {
+                        ...this.headers,
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    params: {
+                        q: `extension:sh repo:${nomeUsuario}/${nomeRepo}`,
+                        per_page: 1
                     }
-                }
-                catch {
-                    continue;
+                });
+                countBash = respostaBash.data.total_count || 0;
+            }
+            catch (erro) {
+                // Ignorar erro 403 (repo vazio) e continuar
+                if (erro.response?.status !== 403) {
+                    console.log(`Erro ao buscar .sh em ${nomeRepo}:`, erro.response?.status);
                 }
             }
-            return false;
+            // Buscar arquivos .ps1
+            try {
+                const respostaPowerShell = await axios_1.default.get(`${this.urlBase}/search/code`, {
+                    headers: {
+                        ...this.headers,
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    params: {
+                        q: `extension:ps1 repo:${nomeUsuario}/${nomeRepo}`,
+                        per_page: 1
+                    }
+                });
+                countPowerShell = respostaPowerShell.data.total_count || 0;
+            }
+            catch (erro) {
+                // Ignorar erro 403 (repo vazio) e continuar
+                if (erro.response?.status !== 403) {
+                    console.log(`Erro ao buscar .ps1 em ${nomeRepo}:`, erro.response?.status);
+                }
+            }
+            const temScripts = countBash > 0 || countPowerShell > 0;
+            let tipoScript = null;
+            if (temScripts) {
+                if (countBash > 0 && countPowerShell > 0) {
+                    // Se usou ambos, retorna o mais usado
+                    tipoScript = countBash >= countPowerShell ? 'Bash' : 'PowerShell';
+                }
+                else if (countBash > 0) {
+                    tipoScript = 'Bash';
+                }
+                else {
+                    tipoScript = 'PowerShell';
+                }
+            }
+            return { temScripts, tipoScript };
         }
-        catch {
-            return false;
+        catch (erro) {
+            console.error('Erro geral em temScriptsAutomacao:', erro);
+            return { temScripts: false, tipoScript: null };
         }
     }
     async obterIssuesRepositorio(nomeUsuario, nomeRepo) {
@@ -5154,28 +5262,29 @@ class ServicoGitHub {
                     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
                     if (diffDays === 1) {
                         sequenciaCorrenteTemp++;
-                    }
-                    else {
                         if (sequenciaCorrenteTemp > maiorSequencia) {
                             maiorSequencia = sequenciaCorrenteTemp;
                         }
+                    }
+                    else {
                         sequenciaCorrenteTemp = 1;
                     }
                 }
-                if (sequenciaCorrenteTemp > maiorSequencia) {
-                    maiorSequencia = sequenciaCorrenteTemp;
-                }
-                // Verificar sequencia atual
+                // Verificar se a sequência atual está ativa
+                // A sequência é considerada ativa se a última contribuição foi hoje ou ontem
                 const ultimaDataStr = dias[dias.length - 1];
                 const hoje = new Date();
+                hoje.setHours(12, 0, 0, 0);
                 const hojeStr = hoje.toISOString().split('T')[0];
                 const ontem = new Date(hoje);
                 ontem.setDate(ontem.getDate() - 1);
                 const ontemStr = ontem.toISOString().split('T')[0];
+                // Se a última contribuição foi hoje ou ontem, a sequência está ativa
                 if (ultimaDataStr === hojeStr || ultimaDataStr === ontemStr) {
                     sequenciaAtual = sequenciaCorrenteTemp;
                 }
                 else {
+                    // Sequência quebrada
                     sequenciaAtual = 0;
                 }
             }

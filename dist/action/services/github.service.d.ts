@@ -11,7 +11,10 @@ export declare class ServicoGitHub {
     temDockerfile(nomeUsuario: string, nomeRepo: string): Promise<boolean>;
     temTerraform(nomeUsuario: string, nomeRepo: string): Promise<boolean>;
     temAnsible(nomeUsuario: string, nomeRepo: string): Promise<boolean>;
-    temScriptsAutomacao(nomeUsuario: string, nomeRepo: string): Promise<boolean>;
+    temScriptsAutomacao(nomeUsuario: string, nomeRepo: string): Promise<{
+        temScripts: boolean;
+        tipoScript: 'Bash' | 'PowerShell' | null;
+    }>;
     obterIssuesRepositorio(nomeUsuario: string, nomeRepo: string): Promise<any[]>;
     obterDiasComContribuicoes(nomeUsuario: string): Promise<string[]>;
     obterContribuicoesDetalhadas(nomeUsuario: string): Promise<{

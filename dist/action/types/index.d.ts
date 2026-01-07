@@ -22,6 +22,7 @@ export interface RepositorioGitHub {
     has_issues: boolean;
     open_issues_count: number;
     topics: string[];
+    fork: boolean;
 }
 export interface EventoGitHub {
     type: string;
@@ -63,6 +64,7 @@ export interface EstatisticasAnalisadas {
     temDockerfiles: boolean;
     reposComActions: number;
     temScriptsAutomacao: boolean;
+    tipoScriptAutomacao: 'Bash' | 'PowerShell' | null;
     temTerraform: boolean;
     temAnsible: boolean;
     pontuacaoDiversidade: number;

@@ -25,7 +25,8 @@ class ServicoGitHub {
                     type: 'owner'
                 }
             });
-            const repositorios = respostaRepos.data;
+            // Filtrar repositórios que são forks - não foram desenvolvidos pelo autor
+            const repositorios = respostaRepos.data.filter((repo) => !repo.fork);
             const respostaEventos = await axios_1.default.get(`${this.urlBase}/users/${nomeUsuario}/events/public`, {
                 headers: this.headers,
                 params: {
@@ -115,11 +116,37 @@ class ServicoGitHub {
     }
     async temDockerfile(nomeUsuario, nomeRepo) {
         try {
+            // Verificar Dockerfile (case sensitive)
             await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/Dockerfile`, { headers: this.headers });
             return true;
         }
         catch {
-            return false;
+            // Se não encontrou Dockerfile, tentar docker-compose.yml
+            try {
+                await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yml`, { headers: this.headers });
+                return true;
+            }
+            catch {
+                // Tentar docker-compose.yaml
+                try {
+                    await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/docker-compose.yaml`, { headers: this.headers });
+                    return true;
+                }
+                catch {
+                    // Última tentativa: verificar se tem a extensão .dockerfile
+                    try {
+                        const resposta = await axios_1.default.get(`${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/`, { headers: this.headers });
+                        if (Array.isArray(resposta.data)) {
+                            return resposta.data.some((arquivo) => arquivo.name.toLowerCase().includes('dockerfile') ||
+                                arquivo.name.toLowerCase().includes('docker-compose'));
+                        }
+                        return false;
+                    }
+                    catch {
+                        return false;
+                    }
+                }
+            }
         }
     }
     async temTerraform(nomeUsuario, nomeRepo) {
@@ -144,30 +171,68 @@ class ServicoGitHub {
     }
     async temScriptsAutomacao(nomeUsuario, nomeRepo) {
         try {
-            // Verificar diretórios comuns de scripts de automação
-            const verificacoes = [
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/scripts`,
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/.scripts`,
-                `${this.urlBase}/repos/${nomeUsuario}/${nomeRepo}/contents/automation`
-            ];
-            for (const url of verificacoes) {
-                try {
-                    const resposta = await axios_1.default.get(url, { headers: this.headers });
-                    // Verificar se há arquivos de script (.sh, .py, .js)
-                    if (Array.isArray(resposta.data) && resposta.data.length > 0) {
-                        const hasScripts = resposta.data.some((file) => /\.(sh|py|js|bash)$/i.test(file.name));
-                        if (hasScripts)
-                            return true;
+            let countBash = 0;
+            let countPowerShell = 0;
+            // Usar a API de busca do GitHub para encontrar arquivos recursivamente
+            // Buscar arquivos .sh
+            try {
+                const respostaBash = await axios_1.default.get(`${this.urlBase}/search/code`, {
+                    headers: {
+                        ...this.headers,
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    params: {
+                        q: `extension:sh repo:${nomeUsuario}/${nomeRepo}`,
+                        per_page: 1
                     }
-                }
-                catch {
-                    continue;
+                });
+                countBash = respostaBash.data.total_count || 0;
+            }
+            catch (erro) {
+                // Ignorar erro 403 (repo vazio) e continuar
+                if (erro.response?.status !== 403) {
+                    console.log(`Erro ao buscar .sh em ${nomeRepo}:`, erro.response?.status);
                 }
             }
-            return false;
+            // Buscar arquivos .ps1
+            try {
+                const respostaPowerShell = await axios_1.default.get(`${this.urlBase}/search/code`, {
+                    headers: {
+                        ...this.headers,
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    params: {
+                        q: `extension:ps1 repo:${nomeUsuario}/${nomeRepo}`,
+                        per_page: 1
+                    }
+                });
+                countPowerShell = respostaPowerShell.data.total_count || 0;
+            }
+            catch (erro) {
+                // Ignorar erro 403 (repo vazio) e continuar
+                if (erro.response?.status !== 403) {
+                    console.log(`Erro ao buscar .ps1 em ${nomeRepo}:`, erro.response?.status);
+                }
+            }
+            const temScripts = countBash > 0 || countPowerShell > 0;
+            let tipoScript = null;
+            if (temScripts) {
+                if (countBash > 0 && countPowerShell > 0) {
+                    // Se usou ambos, retorna o mais usado
+                    tipoScript = countBash >= countPowerShell ? 'Bash' : 'PowerShell';
+                }
+                else if (countBash > 0) {
+                    tipoScript = 'Bash';
+                }
+                else {
+                    tipoScript = 'PowerShell';
+                }
+            }
+            return { temScripts, tipoScript };
         }
-        catch {
-            return false;
+        catch (erro) {
+            console.error('Erro geral em temScriptsAutomacao:', erro);
+            return { temScripts: false, tipoScript: null };
         }
     }
     async obterIssuesRepositorio(nomeUsuario, nomeRepo) {
@@ -302,28 +367,29 @@ class ServicoGitHub {
                     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
                     if (diffDays === 1) {
                         sequenciaCorrenteTemp++;
-                    }
-                    else {
                         if (sequenciaCorrenteTemp > maiorSequencia) {
                             maiorSequencia = sequenciaCorrenteTemp;
                         }
+                    }
+                    else {
                         sequenciaCorrenteTemp = 1;
                     }
                 }
-                if (sequenciaCorrenteTemp > maiorSequencia) {
-                    maiorSequencia = sequenciaCorrenteTemp;
-                }
-                // Verificar sequencia atual
+                // Verificar se a sequência atual está ativa
+                // A sequência é considerada ativa se a última contribuição foi hoje ou ontem
                 const ultimaDataStr = dias[dias.length - 1];
                 const hoje = new Date();
+                hoje.setHours(12, 0, 0, 0);
                 const hojeStr = hoje.toISOString().split('T')[0];
                 const ontem = new Date(hoje);
                 ontem.setDate(ontem.getDate() - 1);
                 const ontemStr = ontem.toISOString().split('T')[0];
+                // Se a última contribuição foi hoje ou ontem, a sequência está ativa
                 if (ultimaDataStr === hojeStr || ultimaDataStr === ontemStr) {
                     sequenciaAtual = sequenciaCorrenteTemp;
                 }
                 else {
+                    // Sequência quebrada
                     sequenciaAtual = 0;
                 }
             }
